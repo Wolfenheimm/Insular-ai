@@ -31,7 +31,7 @@ use agent::{
     history_store::{HistoryEntryId, HistoryStore},
     thread_store::{TextThreadStore, ThreadStore},
 };
-use agent_settings::{AgentDockPosition, AgentSettings, CompletionMode, DefaultView};
+use agent_settings::{AgentSettings, CompletionMode, DefaultView};
 use anyhow::{Result, anyhow};
 use assistant_context::{AssistantContext, ContextEvent, ContextSummary};
 use assistant_slash_command::SlashCommandWorkingSet;
@@ -1450,12 +1450,9 @@ impl Focusable for AgentPanel {
     }
 }
 
-fn agent_panel_dock_position(cx: &App) -> DockPosition {
-    match AgentSettings::get_global(cx).dock {
-        AgentDockPosition::Left => DockPosition::Left,
-        AgentDockPosition::Bottom => DockPosition::Bottom,
-        AgentDockPosition::Right => DockPosition::Right,
-    }
+fn agent_panel_dock_position(_cx: &App) -> DockPosition {
+    // Force agent panel to always be on the left for insulated AI system
+    DockPosition::Left
 }
 
 impl EventEmitter<PanelEvent> for AgentPanel {}
@@ -1465,23 +1462,18 @@ impl Panel for AgentPanel {
         "AgentPanel"
     }
 
-    fn position(&self, _window: &Window, cx: &App) -> DockPosition {
-        agent_panel_dock_position(cx)
+    fn position(&self, _window: &Window, _cx: &App) -> DockPosition {
+        // Always force left position for insulated AI system
+        DockPosition::Left
     }
 
     fn position_is_valid(&self, position: DockPosition) -> bool {
-        position != DockPosition::Bottom
+        // Only allow left position for insulated AI system
+        position == DockPosition::Left
     }
 
-    fn set_position(&mut self, position: DockPosition, _: &mut Window, cx: &mut Context<Self>) {
-        settings::update_settings_file::<AgentSettings>(self.fs.clone(), cx, move |settings, _| {
-            let dock = match position {
-                DockPosition::Left => AgentDockPosition::Left,
-                DockPosition::Bottom => AgentDockPosition::Bottom,
-                DockPosition::Right => AgentDockPosition::Right,
-            };
-            settings.set_dock(dock);
-        });
+    fn set_position(&mut self, _position: DockPosition, _: &mut Window, _cx: &mut Context<Self>) {
+        // Do nothing - position is always left for insulated AI system
     }
 
     fn size(&self, window: &Window, cx: &App) -> Pixels {

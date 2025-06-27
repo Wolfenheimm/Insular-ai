@@ -1,6 +1,13 @@
 [build]
 # v0 mangling scheme provides more detailed backtraces around closures
-rustflags = ["-C", "symbol-mangling-version=v0", "--cfg", "tokio_unstable"]
+rustflags = [
+    "-C",
+    "symbol-mangling-version=v0",
+    "--cfg",
+    "tokio_unstable",
+    "-C",
+    "target-cpu=native",
+]
 
 [alias]
 xtask = "run --package xtask --"
@@ -23,3 +30,5 @@ rustflags = [
 
 [env]
 MACOSX_DEPLOYMENT_TARGET = "10.15.7"
+CXXFLAGS = "-std=c++17"
+CXX_FLAGS = "-std=c++17"

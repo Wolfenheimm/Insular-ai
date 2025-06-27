@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use collections::HashMap;
 use futures::Stream;
-use futures::{FutureExt, StreamExt, future::BoxFuture, stream::BoxStream};
+use futures::{FutureExt, StreamExt, future::BoxFuture, stream::BoxStream, future};
 use gpui::{AnyView, App, AsyncApp, Context, Subscription, Task};
 use http_client::HttpClient;
 use language_model::{
@@ -34,6 +34,17 @@ const LMSTUDIO_SITE: &str = "https://lmstudio.ai/";
 const PROVIDER_ID: &str = "lmstudio";
 const PROVIDER_NAME: &str = "LM Studio";
 
+// Required models for insulated AI system - best models for local development
+const REQUIRED_MODELS: &[&str] = &[
+    "codellama",     // Yi Coder for coding (9B) - CodeLlama alternative
+    "codestral",     // Excellent coding model (22B)
+    "phi",           // Latest Phi-4 model (14B) 
+    "qwen-coder",    // Qwen coding specialist (14B)
+    "llama",         // General purpose Llama (8B)
+    "phi-mini",      // Efficient Phi with long context (3.8B)
+    "qwen-reasoning" // Reasoning specialist (8B)
+];
+
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct LmStudioSettings {
     pub api_url: String,
@@ -64,6 +75,141 @@ pub struct State {
 impl State {
     fn is_authenticated(&self) -> bool {
         !self.available_models.is_empty()
+    }
+
+    // Check if required models (CodeLlama and Phi-2) are available
+    fn has_required_models(&self) -> bool {
+        let available_model_names: Vec<String> = self.available_models
+            .iter()
+            .map(|m| m.name.to_lowercase())
+            .collect();
+        
+        REQUIRED_MODELS.iter().all(|required| {
+            available_model_names.iter().any(|available| {
+                available.contains(*required)
+            })
+        })
+    }
+
+    // Get missing required models
+    fn get_missing_models(&self) -> Vec<&str> {
+        let available_model_names: Vec<String> = self.available_models
+            .iter()
+            .map(|m| m.name.to_lowercase())
+            .collect();
+        
+        REQUIRED_MODELS.iter()
+            .filter(|required| {
+                !available_model_names.iter().any(|available| {
+                    available.contains(**required)
+                })
+            })
+            .copied()
+            .collect()
+    }
+
+    // Check if LMStudio is running by attempting to fetch models
+    fn is_lmstudio_running(&self, cx: &mut Context<Self>) -> Task<Result<bool>> {
+        let settings = &AllLanguageModelSettings::get_global(cx).lmstudio;
+        let http_client = self.http_client.clone();
+        let api_url = settings.api_url.clone();
+
+        cx.spawn(async move |_this, _cx| {
+            match get_models(http_client.as_ref(), &api_url, None).await {
+                Ok(_) => Ok(true),
+                Err(_) => Ok(false),
+            }
+        })
+    }
+
+    // Try to start LMStudio server
+    fn start_lmstudio(&self, cx: &mut Context<Self>) -> Task<Result<()>> {
+        cx.spawn(async move |_this, _cx| {
+            // Try to start LMStudio server via command line
+            let output = std::process::Command::new("lms")
+                .args(&["server", "start"])
+                .output();
+
+            match output {
+                Ok(output) => {
+                    if output.status.success() {
+                        Ok(())
+                    } else {
+                        Err(anyhow!("Failed to start LMStudio server: {}", 
+                            String::from_utf8_lossy(&output.stderr)))
+                    }
+                }
+                Err(_) => {
+                    // If command fails, try to open LMStudio app
+                    #[cfg(target_os = "macos")]
+                    {
+                        let _ = std::process::Command::new("open")
+                            .args(&["-a", "LM Studio"])
+                            .spawn();
+                    }
+                    #[cfg(target_os = "windows")]
+                    {
+                        let _ = std::process::Command::new("cmd")
+                            .args(&["/c", "start", "lmstudio"])
+                            .spawn();
+                    }
+                    #[cfg(target_os = "linux")]
+                    {
+                        let _ = std::process::Command::new("lmstudio")
+                            .spawn();
+                    }
+                    
+                    Err(anyhow!("LMStudio command not found. Please install LMStudio and ensure it's in your PATH."))
+                }
+            }
+        })
+    }
+
+    // Install a required model
+    fn install_model(&self, model_name: &str, cx: &mut Context<Self>) -> Task<Result<()>> {
+        let model_name = model_name.to_string();
+        cx.spawn(async move |_this, _cx| {
+            // Map generic model names to specific downloadable models
+            let download_model = match model_name.as_str() {
+                "codellama" => "yi-coder-9b",  // Yi Coder is excellent for coding tasks
+                "codestral" => "codestral-22b",
+                "phi" => "phi-4", 
+                "qwen-coder" => "qwen2.5-coder-14b",
+                "llama" => "llama-3.1-8b",
+                "phi-mini" => "phi-3.1-mini-128k",
+                "qwen-reasoning" => "qwen3-8b",
+                _ => &model_name,
+            };
+
+            log::info!("Attempting to install model: {} ({})", model_name, download_model);
+            
+            let output = std::process::Command::new("lms")
+                .args(&["get", download_model])
+                .output();
+
+            match output {
+                Ok(output) => {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    
+                    if output.status.success() {
+                        log::info!("Successfully installed model: {}", download_model);
+                        Ok(())
+                    } else {
+                        let error_msg = format!("Failed to install model {} ({}): {}", 
+                            model_name, download_model, stderr);
+                        log::error!("{}", error_msg);
+                        log::error!("Command output: {}", stdout);
+                        Err(anyhow!(error_msg))
+                    }
+                }
+                Err(e) => {
+                    let error_msg = format!("LMStudio CLI (lms) not found. Please install LMStudio CLI. Error: {}", e);
+                    log::error!("{}", error_msg);
+                    Err(anyhow!(error_msg))
+                }
+            }
+        })
     }
 
     fn fetch_models(&mut self, cx: &mut Context<Self>) -> Task<Result<()>> {
@@ -656,8 +802,12 @@ impl ConfigurationView {
 impl Render for ConfigurationView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let is_authenticated = self.state.read(cx).is_authenticated();
+        let state = self.state.read(cx);
+        let has_required_models = state.has_required_models();
+        let missing_models = state.get_missing_models();
+        let state_handle = self.state.clone();
 
-        let lmstudio_intro = "Run local LLMs like Llama, Phi, and Qwen.";
+        let lmstudio_intro = "Insulated AI powered by LM Studio - No data sent to external services.";
 
         if self.loading_models_task.is_some() {
             div().child(Label::new("Loading models...")).into_any()
@@ -668,11 +818,22 @@ impl Render for ConfigurationView {
                     v_flex().gap_1().child(Label::new(lmstudio_intro)).child(
                         List::new()
                             .child(InstructionListItem::text_only(
-                                "LM Studio needs to be running with at least one model downloaded.",
+                                "LM Studio must be running with required models for insulated AI.",
                             ))
                             .child(InstructionListItem::text_only(
-                                "To get your first model, try running `lms get qwen2.5-coder-7b`",
-                            )),
+                                "Required models: Yi-Coder (9B), Codestral (22B), Phi-4 (14B), Qwen2.5-Coder (14B), Llama-3.1 (8B), Phi-Mini (3.8B), Qwen3 (8B)",
+                            ))
+                            .when(!is_authenticated, |this| {
+                                this.child(InstructionListItem::text_only(
+                                    "LM Studio appears to be offline. Click 'Start LM Studio' below.",
+                                ))
+                            })
+                            .when(is_authenticated && !has_required_models, |this| {
+                                this.child(InstructionListItem::text_only(
+                                    format!("Missing {} of {} required models: {}. Click 'Install Missing Models' below.", 
+                                        missing_models.len(), REQUIRED_MODELS.len(), missing_models.join(", ")),
+                                ))
+                            }),
                     ),
                 )
                 .child(
@@ -684,35 +845,30 @@ impl Render for ConfigurationView {
                             h_flex()
                                 .w_full()
                                 .gap_2()
-                                .map(|this| {
-                                    if is_authenticated {
-                                        this.child(
-                                            Button::new("lmstudio-site", "LM Studio")
-                                                .style(ButtonStyle::Subtle)
-                                                .icon(IconName::ArrowUpRight)
-                                                .icon_size(IconSize::XSmall)
-                                                .icon_color(Color::Muted)
-                                                .on_click(move |_, _window, cx| {
-                                                    cx.open_url(LMSTUDIO_SITE)
-                                                })
-                                                .into_any_element(),
+                                .child(
+                                    Button::new("lmstudio-site", "LM Studio")
+                                        .style(ButtonStyle::Subtle)
+                                        .icon(IconName::ArrowUpRight)
+                                        .icon_size(IconSize::XSmall)
+                                        .icon_color(Color::Muted)
+                                        .on_click(move |_, _window, cx| {
+                                            cx.open_url(LMSTUDIO_SITE)
+                                        }),
+                                )
+                                .when(!is_authenticated, |this| {
+                                    this.child(
+                                        Button::new(
+                                            "download_lmstudio_button",
+                                            "Download LM Studio",
                                         )
-                                    } else {
-                                        this.child(
-                                            Button::new(
-                                                "download_lmstudio_button",
-                                                "Download LM Studio",
-                                            )
-                                            .style(ButtonStyle::Subtle)
-                                            .icon(IconName::ArrowUpRight)
-                                            .icon_size(IconSize::XSmall)
-                                            .icon_color(Color::Muted)
-                                            .on_click(move |_, _window, cx| {
-                                                cx.open_url(LMSTUDIO_DOWNLOAD_URL)
-                                            })
-                                            .into_any_element(),
-                                        )
-                                    }
+                                        .style(ButtonStyle::Subtle)
+                                        .icon(IconName::ArrowUpRight)
+                                        .icon_size(IconSize::XSmall)
+                                        .icon_color(Color::Muted)
+                                        .on_click(move |_, _window, cx| {
+                                            cx.open_url(LMSTUDIO_DOWNLOAD_URL)
+                                        }),
+                                    )
                                 })
                                 .child(
                                     Button::new("view-models", "Model Catalog")
@@ -725,32 +881,116 @@ impl Render for ConfigurationView {
                                         }),
                                 ),
                         )
-                        .map(|this| {
-                            if is_authenticated {
-                                this.child(
-                                    ButtonLike::new("connected")
-                                        .disabled(true)
-                                        .cursor_style(gpui::CursorStyle::Arrow)
-                                        .child(
-                                            h_flex()
-                                                .gap_2()
-                                                .child(Indicator::dot().color(Color::Success))
-                                                .child(Label::new("Connected"))
-                                                .into_any_element(),
-                                        ),
-                                )
-                            } else {
-                                this.child(
-                                    Button::new("retry_lmstudio_models", "Connect")
-                                        .icon_position(IconPosition::Start)
-                                        .icon_size(IconSize::XSmall)
-                                        .icon(IconName::Play)
-                                        .on_click(cx.listener(move |this, _, _window, cx| {
-                                            this.retry_connection(cx)
-                                        })),
-                                )
-                            }
-                        }),
+                        .child(
+                            h_flex()
+                                .gap_2()
+                                .when(!is_authenticated, |this| {
+                                    this.child(
+                                        Button::new("start_lmstudio", "Start LM Studio")
+                                            .icon_position(IconPosition::Start)
+                                            .icon_size(IconSize::XSmall)
+                                            .icon(IconName::Play)
+                                            .on_click({
+                                                let state = state_handle.clone();
+                                                move |_, _window, cx| {
+                                                    // Just trigger a simple retry connection which will attempt to start LMStudio
+                                                    state
+                                                        .update(cx, |state, cx| state.fetch_models(cx))
+                                                        .detach_and_log_err(cx);
+                                                }
+                                            }),
+                                    )
+                                })
+                                .when(is_authenticated && !has_required_models, |this| {
+                                    this.child(
+                                        Button::new("install_models", "Install Missing Models")
+                                            .icon_position(IconPosition::Start)
+                                            .icon_size(IconSize::XSmall)
+                                            .icon(IconName::Download)
+                                            .on_click({
+                                                let state = state_handle.clone();
+                                                move |_, _window, cx| {
+                                                    let missing_models: Vec<String> = state.read(cx).get_missing_models().iter().map(|s| s.to_string()).collect();
+                                                    let model_count = missing_models.len();
+                                                    
+                                                    if model_count == 0 {
+                                                        return;
+                                                    }
+                                                    
+                                                    log::info!("Starting parallel installation of {} models: {:?}", model_count, missing_models);
+                                                    
+                                                    // Install all missing models in parallel
+                                                    let install_tasks: Vec<_> = missing_models.into_iter().map(|model_name| {
+                                                        state.update(cx, |state, cx| {
+                                                            state.install_model(&model_name, cx)
+                                                        })
+                                                    }).collect();
+                                                    
+                                                    // Run all installations concurrently
+                                                    cx.spawn({
+                                                        let state = state.clone();
+                                                        async move |cx| {
+                                                            log::info!("Running {} model installations in parallel", install_tasks.len());
+                                                            
+                                                            // Wait for all installations to complete
+                                                            let results = future::join_all(install_tasks).await;
+                                                            
+                                                            // Log results
+                                                            let mut success_count = 0;
+                                                            let mut failure_count = 0;
+                                                            for result in results {
+                                                                match result {
+                                                                    Ok(_) => success_count += 1,
+                                                                    Err(e) => {
+                                                                        failure_count += 1;
+                                                                        log::error!("Model installation failed: {}", e);
+                                                                    }
+                                                                }
+                                                            }
+                                                            
+                                                            log::info!("Model installation complete: {} successful, {} failed", success_count, failure_count);
+                                                            
+                                                            // Refresh the model list after all installations complete
+                                                            state
+                                                                .update(cx, |state, cx| state.fetch_models(cx))
+                                                                .log_err();
+                                                        }
+                                                    }).detach();
+                                                }
+                                            }),
+                                    )
+                                })
+                                .when(is_authenticated, |this| {
+                                    this.child(
+                                        Button::new("retry_lmstudio_models", "Refresh")
+                                            .icon_position(IconPosition::Start)
+                                            .icon_size(IconSize::XSmall)
+                                            .icon(IconName::RotateCcw)
+                                            .on_click({
+                                                let state = state_handle.clone();
+                                                move |_, _window, cx| {
+                                                    state
+                                                        .update(cx, |state, cx| state.fetch_models(cx))
+                                                        .detach_and_log_err(cx);
+                                                }
+                                            }),
+                                    )
+                                })
+                                .when(is_authenticated && has_required_models, |this| {
+                                    this.child(
+                                        ButtonLike::new("ready")
+                                            .disabled(true)
+                                            .cursor_style(gpui::CursorStyle::Arrow)
+                                            .child(
+                                                h_flex()
+                                                    .gap_2()
+                                                    .child(Indicator::dot().color(Color::Success))
+                                                    .child(Label::new("Ready for Insulated AI"))
+                                                    .into_any_element(),
+                                            ),
+                                    )
+                                }),
+                        ),
                 )
                 .into_any()
         }

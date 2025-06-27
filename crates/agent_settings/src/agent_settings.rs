@@ -16,13 +16,37 @@ pub fn init(cx: &mut App) {
     AgentSettings::register(cx);
 }
 
-#[derive(Copy, Clone, Default, Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Copy, Clone, Default, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentDockPosition {
-    Left,
     #[default]
-    Right,
-    Bottom,
+    Left,
+}
+
+impl<'de> serde::Deserialize<'de> for AgentDockPosition {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "left" => Ok(AgentDockPosition::Left),
+            // For insulated AI, convert any old dock position to left
+            "right" | "bottom" => Ok(AgentDockPosition::Left),
+            _ => Ok(AgentDockPosition::Left), // Default fallback
+        }
+    }
+}
+
+impl serde::Serialize for AgentDockPosition {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            AgentDockPosition::Left => serializer.serialize_str("left"),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Default, Debug, Serialize, Deserialize, JsonSchema)]
@@ -223,7 +247,7 @@ pub struct AgentSettingsContent {
     button: Option<bool>,
     /// Where to dock the agent panel.
     ///
-    /// Default: right
+    /// Default: left
     dock: Option<AgentDockPosition>,
     /// Default width in pixels when the agent panel is docked to the left or right.
     ///

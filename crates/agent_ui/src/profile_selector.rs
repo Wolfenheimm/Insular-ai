@@ -214,7 +214,5 @@ impl Render for ProfileSelector {
 fn documentation_side(position: AgentDockPosition) -> DocumentationSide {
     match position {
         AgentDockPosition::Left => DocumentationSide::Right,
-        AgentDockPosition::Bottom => DocumentationSide::Left,
-        AgentDockPosition::Right => DocumentationSide::Left,
     }
 }
