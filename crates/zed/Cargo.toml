@@ -1,21 +1,21 @@
 [package]
-description = "The fast, collaborative code editor."
+description = "Insulated AI-powered code editor for local development."
 edition.workspace = true
-name = "zed"
+name = "insular"
 version = "0.194.0"
 publish.workspace = true
 license = "GPL-3.0-or-later"
-authors = ["Zed Team <hi@zed.dev>"]
+authors = ["Insular Team"]
 
 [lints]
 workspace = true
 
 [[bin]]
-name = "zed"
+name = "insular"
 path = "src/zed-main.rs"
 
 [lib]
-name = "zed"
+name = "insular"
 path = "src/main.rs"
 
 [dependencies]
@@ -178,36 +178,42 @@ tree-sitter-rust.workspace = true
 workspace = { workspace = true, features = ["test-support"] }
 
 [package.metadata.bundle-dev]
-icon = ["resources/app-icon-dev@2x.png", "resources/app-icon-dev.png"]
-identifier = "dev.zed.Zed-Dev"
-name = "Zed Dev"
+icon = ["resources/insular-icon-dev@2x.png", "resources/insular-icon-dev.png"]
+identifier = "dev.insular.Insular-Dev"
+name = "Insular Dev"
 osx_minimum_system_version = "10.15.7"
 osx_info_plist_exts = ["resources/info/*"]
-osx_url_schemes = ["zed"]
+osx_url_schemes = ["insular"]
 
 [package.metadata.bundle-nightly]
-icon = ["resources/app-icon-nightly@2x.png", "resources/app-icon-nightly.png"]
-identifier = "dev.zed.Zed-Nightly"
-name = "Zed Nightly"
+icon = [
+    "resources/insular-icon-nightly@2x.png",
+    "resources/insular-icon-nightly.png",
+]
+identifier = "dev.insular.Insular-Nightly"
+name = "Insular Nightly"
 osx_minimum_system_version = "10.15.7"
 osx_info_plist_exts = ["resources/info/*"]
-osx_url_schemes = ["zed"]
+osx_url_schemes = ["insular"]
 
 [package.metadata.bundle-preview]
-icon = ["resources/app-icon-preview@2x.png", "resources/app-icon-preview.png"]
-identifier = "dev.zed.Zed-Preview"
-name = "Zed Preview"
+icon = [
+    "resources/insular-icon-preview@2x.png",
+    "resources/insular-icon-preview.png",
+]
+identifier = "dev.insular.Insular-Preview"
+name = "Insular Preview"
 osx_minimum_system_version = "10.15.7"
 osx_info_plist_exts = ["resources/info/*"]
-osx_url_schemes = ["zed"]
+osx_url_schemes = ["insular"]
 
 [package.metadata.bundle-stable]
-icon = ["resources/app-icon@2x.png", "resources/app-icon.png"]
-identifier = "dev.zed.Zed"
-name = "Zed"
+icon = ["resources/insular-icon@2x.png", "resources/insular-icon.png"]
+identifier = "dev.insular.Insular"
+name = "Insular"
 osx_minimum_system_version = "10.15.7"
 osx_info_plist_exts = ["resources/info/*"]
-osx_url_schemes = ["zed"]
+osx_url_schemes = ["insular"]
 
 [package.metadata.cargo-machete]
 ignored = ["profiling", "zstd"]

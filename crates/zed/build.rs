@@ -50,7 +50,7 @@ fn main() {
             println!("cargo:rustc-link-arg=/stack:{}", 8 * 1024 * 1024);
         }
 
-        let icon = std::path::Path::new("resources/windows/app-icon.ico");
+        let icon = std::path::Path::new("resources/windows/insular-icon.ico");
         println!("cargo:rerun-if-changed={}", icon.display());
 
         let mut res = winresource::WindowsResource::new();
@@ -62,8 +62,8 @@ fn main() {
             res.set_toolkit_path(explicit_rc_toolkit_path.as_str());
         }
         res.set_icon(icon.to_str().unwrap());
-        res.set("FileDescription", "Zed");
-        res.set("ProductName", "Zed");
+        res.set("FileDescription", "Insular");
+        res.set("ProductName", "Insular");
 
         if let Err(e) = res.compile() {
             eprintln!("{}", e);

@@ -88,10 +88,10 @@ script/generate-licenses
 
 if [ "$local_arch" = true ]; then
     echo "Building for local target only."
-    cargo build ${build_flag} --package insular --package cli --package remote_server
+    cargo build ${build_flag} --package zed --package cli --package remote_server
 else
     echo "Compiling zed binaries"
-    cargo build ${build_flag} --package insular --package cli --target aarch64-apple-darwin --target x86_64-apple-darwin
+    cargo build ${build_flag} --package zed --package cli --target aarch64-apple-darwin --target x86_64-apple-darwin
     # Build remote_server in separate invocation to prevent feature unification from other crates
     # from influencing dynamic libraries required by it.
     cargo build ${build_flag} --package remote_server     --target aarch64-apple-darwin --target x86_64-apple-darwin
@@ -191,7 +191,7 @@ function prepare_binaries() {
     local app_path=$2
 
     echo "Unpacking dSYMs for $architecture"
-    exe_path="target/${architecture}/${target_dir}/insular"
+    exe_path="target/${architecture}/${target_dir}/Zed"
     if ! dsymutil --flat "${exe_path}" 2> target/dsymutil.log; then
         echo "dsymutil failed"
         cat target/dsymutil.log
@@ -204,18 +204,18 @@ function prepare_binaries() {
     fi
 
     echo "Removing existing gzipped dSYMs for $architecture"
-    rm -f target/${architecture}/${target_dir}/insular.dwarf.gz
+    rm -f target/${architecture}/${target_dir}/Zed.dwarf.gz
 
     echo "Gzipping dSYMs for $architecture"
-    gzip -f target/${architecture}/${target_dir}/insular.dwarf
+    gzip -f target/${architecture}/${target_dir}/Zed.dwarf
 
     echo "Uploading dSYMs${architecture} for $architecture to by-uuid/${uuid}.dwarf.gz"
     upload_to_blob_store_public \
         "zed-debug-symbols" \
-        target/${architecture}/${target_dir}/insular.dwarf.gz \
+        target/${architecture}/${target_dir}/Zed.dwarf.gz \
         "by-uuid/${uuid}.dwarf.gz"
 
-    cp target/${architecture}/${target_dir}/zed "${app_path}/Contents/MacOS/insular"
+    cp target/${architecture}/${target_dir}/zed "${app_path}/Contents/MacOS/zed"
     cp target/${architecture}/${target_dir}/cli "${app_path}/Contents/MacOS/cli"
 }
 
@@ -240,7 +240,7 @@ function sign_app_binaries() {
         # sequence of codesign commands modeled after this example: https://developer.apple.com/forums/thread/701514
         /usr/bin/codesign --deep --force --timestamp --options runtime --sign "$IDENTITY" "${app_path}/Contents/MacOS/cli" -v
         /usr/bin/codesign --deep --force --timestamp --options runtime --sign "$IDENTITY" "${app_path}/Contents/MacOS/git" -v
-        /usr/bin/codesign --deep --force --timestamp --options runtime --entitlements crates/zed/resources/zed.entitlements --sign "$IDENTITY" "${app_path}/Contents/MacOS/insular" -v
+        /usr/bin/codesign --deep --force --timestamp --options runtime --entitlements crates/zed/resources/zed.entitlements --sign "$IDENTITY" "${app_path}/Contents/MacOS/zed" -v
         /usr/bin/codesign --force --timestamp --options runtime --entitlements crates/zed/resources/zed.entitlements --sign "$IDENTITY" "${app_path}" -v
     else
         echo "One or more of the following variables are missing: MACOS_CERTIFICATE, MACOS_CERTIFICATE_PASSWORD, APPLE_NOTARIZATION_KEY, APPLE_NOTARIZATION_KEY_ID, APPLE_NOTARIZATION_ISSUER_ID"
@@ -301,7 +301,7 @@ function sign_app_binaries() {
     else
         dmg_target_directory="target/${architecture_dir}/${target_dir}"
         dmg_source_directory="${dmg_target_directory}/dmg"
-        dmg_file_path="${dmg_target_directory}/Insular.dmg"
+        dmg_file_path="${dmg_target_directory}/Zed.dmg"
         xcode_bin_dir_path="$(xcode-select -p)/usr/bin"
 
         rm -rf ${dmg_source_directory}
@@ -363,6 +363,6 @@ else
 
     sign_binary "target/x86_64-apple-darwin/release/remote_server"
     sign_binary "target/aarch64-apple-darwin/release/remote_server"
-    gzip -f --stdout --best target/x86_64-apple-darwin/release/remote_server > target/insular-remote-server-macos-x86_64.gz
-    gzip -f --stdout --best target/aarch64-apple-darwin/release/remote_server > target/insular-remote-server-macos-aarch64.gz
+    gzip -f --stdout --best target/x86_64-apple-darwin/release/remote_server > target/zed-remote-server-macos-x86_64.gz
+    gzip -f --stdout --best target/aarch64-apple-darwin/release/remote_server > target/zed-remote-server-macos-aarch64.gz
 fi
